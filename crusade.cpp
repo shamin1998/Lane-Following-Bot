@@ -21,7 +21,7 @@ typedef struct
 
 void GaussianThreshold(int, void*)
 {
-	Mat b(src.rows, src.cols, CV_8UC1, Scalar(0));
+	Mat b(src.rows, src.cols, CV_8UC1, Scalar(0));		//to threshold Gaussian Blur
 	Size ksize;
 	ksize.width = 23;
 	ksize.height = ksize.width;
@@ -35,14 +35,14 @@ void CannyThreshold(int, void*)
 {
 	Mat c(src.rows, src.cols, CV_8UC1, Scalar(0));
 
-	Canny(src, c, canny_thresh, canny_thresh*3, 3);
+	Canny(src, c, canny_thresh, canny_thresh*3, 3);		//to threshold Canny Edge Detector
 	imshow("Canny", c);
 	waitKey(10);
 	return;
 }
 
-vector<hough_line> hough_transform(vector<Vec4i> lines, Mat hough)
-{
+vector<hough_line> hough_transform(vector<Vec4i> lines, Mat hough)		//to convert lines from 2-point form to y=m*x+b form
+{																		//where origin is at bottom left of image
 	vector<hough_line> houghedlines;
 	for( size_t i = 0; i < lines.size(); i++ )
     {
@@ -69,7 +69,7 @@ int main()
 	// GaussianThreshold(0,0);
 	// waitKey(0);
 
-	Mat blurred(src.rows, src.cols, CV_8UC1, Scalar(0));
+	Mat blurred(src.rows, src.cols, CV_8UC1, Scalar(0));		//blur image
 	Size ksize;
 	ksize.width = 2*blur_thresh + 1;
 	ksize.height = ksize.width;
@@ -84,12 +84,12 @@ int main()
 	// CannyThreshold(0,0);
 	// waitKey(0);
 
-	Mat canny(blurred.rows, blurred.cols, CV_8UC1, Scalar(0));
+	Mat canny(blurred.rows, blurred.cols, CV_8UC1, Scalar(0));		//apply canny edge setector
 	Canny(blurred, canny, canny_thresh, canny_thresh*3, 3);
 	imshow("Canny", canny);
 	while(waitKey(10)!=27){}	
 
-	Mat hough(canny.rows, canny.cols, CV_8UC1, Scalar(0));
+	Mat hough(canny.rows, canny.cols, CV_8UC1, Scalar(0));		//apply hough line detector
 	vector<Vec4i> lines;
 	HoughLinesP(canny, lines, 1, CV_PI/180, 50, 50, 10);
     printf("%d\n",(int)lines.size());
@@ -103,12 +103,12 @@ int main()
     imshow("Hough",hough);
 	while(waitKey(10)!=27){}
 
-	vector<hough_line> houghedlines = hough_transform(lines, hough);    
+	vector<hough_line> houghedlines = hough_transform(lines, hough);
 	for(i=0; i<houghedlines.size(); i++)
 		printf("line %d: m=%f, b=%f\n", (int)i, houghedlines[i].m*180/3.14159265, houghedlines[i].b);
 
 	int n_positive=0, n_negative=0;
-	hough_line positive_line, negative_line;
+	hough_line positive_line, negative_line;		//average out all lines with positive slope to one line, and negative slope to another
 	positive_line.m = 0;
 	positive_line.b = 0;
 	negative_line.m = 0;
