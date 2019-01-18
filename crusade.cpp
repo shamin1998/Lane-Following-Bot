@@ -11,7 +11,8 @@ using namespace std;
 using namespace cv;
 
 int blur_thresh = 11;
-int canny_thresh = 13;
+int canny_thresh = 10;
+int hough_thresh = 72;
 Mat src = imread("Lane.jpg",0);
 
 typedef struct
@@ -57,6 +58,22 @@ vector<hough_line> hough_transform(vector<Vec4i> lines, Mat hough)		//to convert
     return houghedlines;
 }
 
+void HoughThreshold(int, void *)
+{
+	Mat h(src.rows, src.cols, CV_8UC1, Scalar(0));
+	vector<Vec4i> lines;
+	HoughLinesP(src, lines, 1, CV_PI/180, hough_thresh, 5, 500);
+	size_t i;
+    for(i=0; i<lines.size(); i++)
+    {
+      Vec4i l = lines[i];
+      line(h, Point(l[0],l[1]), Point(l[2],l[3]), Scalar(255), 3, CV_AA);
+    }
+    imshow("Hough",h);
+    waitKey(10);
+    return;
+}
+
 int main()
 {
 	
@@ -77,21 +94,31 @@ int main()
 	imshow("Gaussian Blur",blurred);
 	while(waitKey(10)!=27){}
 
-	// a = b.clone();
+
+	// src = blurred.clone();
 
 	// namedWindow("Canny",WINDOW_AUTOSIZE);
 	// createTrackbar("Canny_Threshold", "Canny", &canny_thresh, 50, CannyThreshold);
 	// CannyThreshold(0,0);
 	// waitKey(0);
+	// return 0;
+
 
 	Mat canny(blurred.rows, blurred.cols, CV_8UC1, Scalar(0));		//apply canny edge setector
 	Canny(blurred, canny, canny_thresh, canny_thresh*3, 3);
 	imshow("Canny", canny);
-	while(waitKey(10)!=27){}	
+	while(waitKey(10)!=27){}
+
+	// src = canny.clone();
+	// namedWindow("Hough",WINDOW_AUTOSIZE);
+	// createTrackbar("Hough_Threshold", "Hough", &hough_thresh, 200, HoughThreshold);
+	// HoughThreshold(0,0);
+	// waitKey(0);
+	// return 0;
 
 	Mat hough(canny.rows, canny.cols, CV_8UC1, Scalar(0));		//apply hough line detector
 	vector<Vec4i> lines;
-	HoughLinesP(canny, lines, 1, CV_PI/180, 50, 50, 10);
+	HoughLinesP(canny, lines, 1, CV_PI/180, hough_thresh, 5, 500);
     printf("%d\n",(int)lines.size());
     size_t i;
     for(i=0; i<lines.size(); i++)
@@ -107,39 +134,110 @@ int main()
 	for(i=0; i<houghedlines.size(); i++)
 		printf("line %d: m=%f, b=%f\n", (int)i, houghedlines[i].m*180/3.14159265, houghedlines[i].b);
 
-	int n_positive=0, n_negative=0;
-	hough_line positive_line, negative_line;		//average out all lines with positive slope to one line, and negative slope to another
-	positive_line.m = 0;
-	positive_line.b = 0;
-	negative_line.m = 0;
-	negative_line.b = 0;
+	int n_positive=0, n_negative=0, n_top=0;
+	map<int, pair<hough_line,int> > positive_line, negative_line, top_line;		//average out all lines with positive slope to one line, and negative slope to another
+	
 	for(i=0; i<houghedlines.size(); i++)
 	{
-		if(houghedlines[i].m >= 0)
+		if(houghedlines[i].m >= tan(15*M_PI/180))
 		{
-			positive_line.m += houghedlines[i].m;
-			positive_line.b += houghedlines[i].b;
+			int slope=(int)(atan(houghedlines[i].m/3));
+			if(positive_line.find(slope) != positive_line.end())
+			{
+				positive_line[slope].first.m += houghedlines[i].m;
+				positive_line[slope].first.b += houghedlines[i].b;
+				positive_line[slope].second++;
+			}
+			else
+			{
+				positive_line[slope].first = houghedlines[i];
+				positive_line[slope].second = 1;				
+			}
 			n_positive++;
+		}
+
+		else if(houghedlines[i].m <= tan(-15*M_PI/180))
+		{
+			int slope=(int)(atan(houghedlines[i].m/3));
+			if(negative_line.find(slope) != negative_line.end())
+			{
+				negative_line[slope].first.m += houghedlines[i].m;
+				negative_line[slope].first.b += houghedlines[i].b;
+				negative_line[slope].second++;
+			}
+			else
+			{
+				negative_line[slope].first = houghedlines[i];
+				negative_line[slope].second = 1;				
+			}
+			n_negative++;
 		}
 
 		else
 		{
-			negative_line.m += houghedlines[i].m;
-			negative_line.b += houghedlines[i].b;	
-			n_negative++;
+			int slope=(int)(atan(houghedlines[i].m/3));
+			if(top_line.find(slope) != top_line.end())
+			{
+				top_line[slope].first.m += houghedlines[i].m;
+				top_line[slope].first.b += houghedlines[i].b;
+				top_line[slope].second++;
+			}
+			else
+			{
+				top_line[slope].first = houghedlines[i];
+				top_line[slope].second = 1;				
+			}
+			n_top++;
 		}
 	}
 
-	if(n_positive==0 || n_negative==0) {printf("error\n"); return 0;}
+	// if(n_positive==0 || n_negative==0) {printf("error\n"); return 0;}
 
-	positive_line.m /= n_positive;
-	positive_line.b /= n_positive;
-	negative_line.m /= n_negative;
-	negative_line.b /= n_negative;
+	//Positive
+	int te_sl,te_cn=0;
+	for(auto it:positive_line)
+	{
+		if(te_cn > it.second.second)
+		{
+			te_cn=it.second.second;
+			te_sl=it.first;
+		}
+	}
+	hough_line pos_line;
+	pos_line.m = positive_line[te_sl].first.m/positive_line[te_sl].second;
+	pos_line.b = positive_line[te_sl].first.b/positive_line[te_sl].second; 
+	
+	// Negative
+	te_cn=0;
+	for(auto it:negative_line)
+	{
+		if(te_cn > it.second.second)
+		{
+			te_cn=it.second.second;
+			te_sl=it.first;
+		}
+	}
+	hough_line neg_line;
+	neg_line.m = negative_line[te_sl].first.m/negative_line[te_sl].second;
+	neg_line.b = negative_line[te_sl].first.b/negative_line[te_sl].second; 
+
+	// Top
+	te_cn=0;
+	for(auto it:top_line)
+	{
+		if(te_cn > it.second.second)
+		{
+			te_cn=it.second.second;
+			te_sl=it.first;
+		}
+	}
+	hough_line to_line;
+	to_line.m = top_line[te_sl].first.m/top_line[te_sl].second;
+	to_line.b = top_line[te_sl].first.b/top_line[te_sl].second; 
 
 	Mat lane(hough.rows, hough.cols, CV_8UC1, Scalar(0));
-	line(lane, Point(0,(lane.rows-positive_line.b)/positive_line.m), Point(lane.rows-positive_line.b,0), Scalar(255), 3, CV_AA);
-	line(lane, Point(0,(lane.rows-negative_line.b)/negative_line.m), Point(lane.rows-(negative_line.m*lane.cols+negative_line.b),lane.cols), Scalar(255), 3, CV_AA);
+	line(lane, Point(0,(lane.rows-pos_line.b)/pos_line.m), Point(lane.rows-pos_line.b,0), Scalar(255), 3, CV_AA);
+	line(lane, Point(0,(lane.rows-neg_line.b)/neg_line.m), Point(lane.rows-(neg_line.m*lane.cols+neg_line.b),lane.cols), Scalar(255), 3, CV_AA);
 
 	imshow("Final Lane", lane);
 	while(waitKey(10)!=27){}
